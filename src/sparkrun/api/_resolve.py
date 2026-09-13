@@ -39,6 +39,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def resolve_ssh_kwargs(cluster_def, config=None, ssh_kwargs: dict | None = None) -> dict:
+    """Return SSH settings with the saved cluster user applied.
+
+    Callers may supply connection settings directly.  Otherwise the global
+    settings provide the key and options.  In both cases the cluster owns the
+    login identity for its hosts.
+    """
+    if ssh_kwargs is None and config is not None:
+        from sparkrun.orchestration.primitives import build_ssh_kwargs
+
+        ssh_kwargs = build_ssh_kwargs(config)
+    resolved = dict(ssh_kwargs or {})
+    if getattr(cluster_def, "user", None):
+        resolved["ssh_user"] = cluster_def.user
+    return resolved
+
+
 def prepare_transport(cluster_def: "ClusterDefinition | None", *, dry_run: bool = False) -> None:
     """Run the cluster's transport ``prepare`` step, translating failures.
 

@@ -15,6 +15,7 @@ don't launch anything.  Coverage:
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -198,6 +199,30 @@ def test_status_cluster_hardware_propagates_to_query():
     # 4-GPU host, nothing running → 4 free slots (proves host_hardware passed through).
     assert occ is not None
     assert occ.free_slots == 4
+
+
+def test_status_uses_cluster_ssh_user_with_shared_key(monkeypatch, tmp_path):
+    """A saved cluster user overrides the global user without dropping the key."""
+    from sparkrun.core.config import SparkrunConfig
+
+    key_path = tmp_path / "sparkrun_ed25519"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"ssh:\n  user: spark-c032\n  key: {key_path}\n")
+    cluster = ClusterDefinition(name="c458", hosts=["100.83.161.109"], user="spark-c458")
+    sctx = SimpleNamespace(config=SparkrunConfig(config_path), variables=None)
+    captured = {}
+
+    def _query(cluster_def, hosts, **kwargs):
+        captured.update(kwargs["ssh_kwargs"])
+        return empty_status(hosts)
+
+    monkeypatch.setattr("sparkrun.orchestration.executor.query_status_for_cluster", _query)
+    monkeypatch.setattr("sparkrun.api._status._record_running_snapshot", lambda *args: None)
+
+    api.status(cluster.hosts, cluster=cluster, sctx=sctx)
+
+    assert captured["ssh_user"] == "spark-c458"
+    assert captured["ssh_key"] == str(key_path)
 
 
 def test_status_empty_host_list_returns_empty():
