@@ -32,19 +32,16 @@ logger = logging.getLogger(__name__)
 
 def _resolve_ctx(hosts, cluster, ssh_kwargs, sctx):
     """Shared setup: resolve the cluster def, scope, and ssh_kwargs."""
-    from sparkrun.api._resolve import prepare_transport, resolve_cluster
+    from sparkrun.api._resolve import prepare_transport, resolve_cluster, resolve_ssh_kwargs
     from sparkrun.orchestration.executor import cluster_status_scope
 
     cluster_def = resolve_cluster(cluster, hosts, sctx=sctx)
     prepare_transport(cluster_def)
     v = sctx.variables if sctx is not None else None
     config = sctx.config if sctx is not None else None
-    if ssh_kwargs is None and config is not None:
-        from sparkrun.orchestration.primitives import build_ssh_kwargs
-
-        ssh_kwargs = build_ssh_kwargs(config)
+    ssh_kwargs = resolve_ssh_kwargs(cluster_def, config, ssh_kwargs)
     scope = cluster_status_scope(cluster_def, config=config, v=v)
-    return cluster_def, scope, ssh_kwargs or {}, config, v
+    return cluster_def, scope, ssh_kwargs, config, v
 
 
 def open_telemetry(

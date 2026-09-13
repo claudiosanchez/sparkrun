@@ -49,7 +49,7 @@ def status(
         omitted from :attr:`ClusterStatus.hosts`; callers can detect
         this with ``status.for_host(h) is None``.
     """
-    from sparkrun.api._resolve import prepare_transport, resolve_cluster
+    from sparkrun.api._resolve import prepare_transport, resolve_cluster, resolve_ssh_kwargs
     from sparkrun.orchestration.executor import query_status_for_cluster
 
     # Always end up with a populated ClusterDefinition; hosts are the
@@ -60,6 +60,7 @@ def status(
     v = sctx.variables if sctx is not None else None
     config = sctx.config if sctx is not None else None
     host_hardware = cluster_def.hosts_hardware or None
+    ssh_kwargs = resolve_ssh_kwargs(cluster_def, config, ssh_kwargs)
 
     # The single status source: query every enabled executor on this cluster's
     # substrate (its ``status_scope``) and merge.  For an SSH cluster that's

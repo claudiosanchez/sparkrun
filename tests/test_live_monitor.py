@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -138,6 +139,68 @@ class _FakeProvider:
 def test_open_telemetry_none_when_no_provider(monkeypatch):
     monkeypatch.setattr("sparkrun.orchestration.telemetry.get_telemetry_provider", lambda scope, v=None: None)
     assert api.open_telemetry(["h1"]) is None
+
+
+def test_open_telemetry_uses_cluster_ssh_user_with_shared_key(monkeypatch, tmp_path):
+    """A saved cluster user overrides the global user without dropping the key."""
+    from sparkrun.core.cluster_manager import ClusterDefinition
+    from sparkrun.core.config import SparkrunConfig
+
+    key_path = tmp_path / "sparkrun_ed25519"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"ssh:\n  user: spark-c032\n  key: {key_path}\n")
+    sctx = SimpleNamespace(config=SparkrunConfig(config_path), variables=None)
+    cluster = ClusterDefinition(name="c458", hosts=["100.83.161.109"], user="spark-c458")
+    captured = {}
+
+    class _CapturingProvider:
+        scope = "host"
+
+        def open(self, hosts, **kwargs):
+            captured.update(kwargs["ssh_kwargs"])
+            return _FakeSession({})
+
+    monkeypatch.setattr(
+        "sparkrun.orchestration.telemetry.get_telemetry_provider",
+        lambda scope, v=None: _CapturingProvider(),
+    )
+
+    session = api.open_telemetry(cluster.hosts, cluster=cluster, sctx=sctx)
+    session.close()
+
+    assert captured["ssh_user"] == "spark-c458"
+    assert captured["ssh_key"] == str(key_path)
+
+
+def test_open_telemetry_falls_back_to_global_ssh_user(monkeypatch, tmp_path):
+    """Clusters without a saved user retain the global SSH identity."""
+    from sparkrun.core.cluster_manager import ClusterDefinition
+    from sparkrun.core.config import SparkrunConfig
+
+    key_path = tmp_path / "sparkrun_ed25519"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"ssh:\n  user: fallback-user\n  key: {key_path}\n")
+    sctx = SimpleNamespace(config=SparkrunConfig(config_path), variables=None)
+    cluster = ClusterDefinition(name="legacy", hosts=["legacy-host"])
+    captured = {}
+
+    class _CapturingProvider:
+        scope = "host"
+
+        def open(self, hosts, **kwargs):
+            captured.update(kwargs["ssh_kwargs"])
+            return _FakeSession({})
+
+    monkeypatch.setattr(
+        "sparkrun.orchestration.telemetry.get_telemetry_provider",
+        lambda scope, v=None: _CapturingProvider(),
+    )
+
+    session = api.open_telemetry(cluster.hosts, cluster=cluster, sctx=sctx)
+    session.close()
+
+    assert captured["ssh_user"] == "fallback-user"
+    assert captured["ssh_key"] == str(key_path)
 
 
 def _drive_until(session, pred, timeout=2.0):
